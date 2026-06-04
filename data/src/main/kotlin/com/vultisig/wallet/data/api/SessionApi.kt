@@ -233,6 +233,11 @@ constructor(private val json: Json, private val httpClient: HttpClient) : Sessio
 
     companion object {
         private const val MESSAGE_ID_HEADER_TITLE = "message_id"
-        private const val MAX_RETRIES = 10
+        // Bumped 10→60 for the Tier-3 emulator co-sign harness: the joining
+        // phone fetches the DKLS setup-message which the initiator posts only
+        // after seeing the phone's /start, so the ~10s default window often
+        // 404s before the setup is published. 60s lets the phone tap Sign early
+        // (initiator session still fresh) and retry until the setup appears.
+        private const val MAX_RETRIES = 60
     }
 }
