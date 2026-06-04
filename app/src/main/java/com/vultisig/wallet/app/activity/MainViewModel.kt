@@ -8,7 +8,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.install.model.UpdateAvailability
+import com.vultisig.wallet.BuildConfig
 import com.vultisig.wallet.data.common.DeepLinkHelper
+import com.vultisig.wallet.data.common.JOIN_KEYSIGN_FLOW
 import com.vultisig.wallet.data.models.SendDeeplinkData
 import com.vultisig.wallet.data.repositories.VaultRepository
 import com.vultisig.wallet.data.usecases.InitializeThorChainNetworkIdUseCase
@@ -21,6 +23,8 @@ import com.vultisig.wallet.ui.utils.NetworkUtils
 import com.vultisig.wallet.ui.utils.SnackbarFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +91,7 @@ constructor(
             .launchIn(viewModelScope)
     }
 
+    @OptIn(ExperimentalEncodingApi::class)
     fun openUri(uri: Uri) {
         viewModelScope.launch {
             delay(1.seconds)
@@ -110,6 +115,29 @@ constructor(
                     )
                 } else {
                     navigator.route(Route.ImportVault())
+                }
+            } else if (BuildConfig.DEBUG &&
+                deepLinkHelper.getFlowType() == JOIN_KEYSIGN_FLOW
+            ) {
+                // DEBUG-ONLY: join a keysign directly from an external deeplink.
+                // The release app only joins a keysign via in-app QR scan or FCM
+                // push; the Tier-3 emulator co-sign harness needs a scriptable
+                // entry point (`adb am start vultisig://vultisig.com?type=SignTransaction…`).
+                // Guarded by BuildConfig.DEBUG so it is never compiled into release.
+                val pubKeyEcdsa = deepLinkHelper.getParameter("vault")
+                val vaultId =
+                    (pubKeyEcdsa?.let { vaultRepository.getByEcdsa(it) }
+                        ?: vaultRepository.getAll().firstOrNull())
+                        ?.id
+                if (vaultId != null) {
+                    navigator.route(
+                        Route.Keysign.Join(
+                            vaultId = vaultId,
+                            qr = Base64.UrlSafe.encode(uri.toString().toByteArray()),
+                        )
+                    )
+                } else {
+                    navigator.route(Route.ImportVault(uri = uri.toString()))
                 }
             } else {
                 navigator.route(Route.ImportVault(uri = uri.toString()))
