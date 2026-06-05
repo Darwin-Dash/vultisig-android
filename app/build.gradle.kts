@@ -36,6 +36,12 @@ android {
                 "proguard-rules.pro",
             )
         }
+        debug {
+            // Install the test/debug build side-by-side with the official app
+            // (com.vultisig.wallet) so a real test phone keeps its real vaults.
+            // Requires a matching google-services.json client for the suffixed id.
+            applicationIdSuffix = ".debug"
+        }
     }
     buildFeatures {
         compose = true
