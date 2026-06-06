@@ -1113,9 +1113,19 @@ constructor(
         _jobWaitingForKeysignStart =
             viewModelScope.launch {
                 withContext(Dispatchers.IO) {
+                    // Bound the wait so a session that genuinely never starts still
+                    // surfaces an error — but transient poll failures don't.
+                    val deadline = System.currentTimeMillis() + 60_000L
                     while (isActive) {
                         if (checkKeygenStarted()) {
                             currentState.value = JoinKeysignState.Keysign
+                            return@withContext
+                        }
+                        if (System.currentTimeMillis() >= deadline) {
+                            currentState.value =
+                                JoinKeysignState.Error(
+                                    JoinKeysignError.FailedToStart("Timed out waiting for keysign to start"),
+                                )
                             return@withContext
                         }
                         // backoff 1s
@@ -1149,9 +1159,13 @@ constructor(
                 return true
             }
         } catch (e: Exception) {
-            Timber.e(e, "Failed to check keysign start")
-            currentState.value =
-                JoinKeysignState.Error(JoinKeysignError.FailedToCheck(e.message.toString()))
+            // Transient failure while polling for the keysign committee — most
+            // commonly a 404 because the initiating device hasn't posted /start
+            // yet. This is an EXPECTED condition during the poll loop, so do NOT
+            // surface a fatal "Signing Error" on every iteration; just log and
+            // keep polling. waitForKeysignToStart() bounds the wait with a timeout
+            // and reports the error only if the keysign genuinely never starts.
+            Timber.e(e, "Failed to check keysign start (transient; will retry)")
         }
         return false
     }
